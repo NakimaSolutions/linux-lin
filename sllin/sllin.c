@@ -41,6 +41,8 @@
  * Funded by:  Volkswagen Group Research
  */
 
+#include <linux/version.h>
+
 //#define DEBUG			1 /* Enables pr_debug() printouts */
 //#define SLLIN_LED_TRIGGER /* Enables led triggers */
 
@@ -57,18 +59,23 @@
 #include <linux/rtnetlink.h>
 #include <linux/if_arp.h>
 #include <linux/if_ether.h>
+#if (LINUX_VERSION_CODE < KERNEL_VERSION(4, 11, 0))
 #include <linux/sched.h>
+#else
+#include <uapi/linux/sched/types.h>
+#endif
 #include <linux/delay.h>
 #include <linux/init.h>
 #include <linux/can.h>
 #include <linux/kthread.h>
 #include <linux/hrtimer.h>
-#include <linux/version.h>
+
 #include "linux/lin_bus.h"
 
-/* Should be in include/linux/tty.h */
-#define N_SLLIN			25
-/* -------------------------------- */
+
+/* Should be in include/linux/tty.h or /include/uapi/linux/tty.h */
+#define N_SLLIN			28
+/* ------------------------------------------------------------- */
 
 #ifdef SLLIN_LED_TRIGGER
 #define SLLIN_LED_NAME_SZ (IFNAMSIZ + 6)
@@ -603,7 +610,9 @@ static int sll_open(struct net_device *dev)
 static void sll_free_netdev(struct net_device *dev)
 {
 	int i = dev->base_addr;
+#if (LINUX_VERSION_CODE < KERNEL_VERSION(4, 11, 9))
 	free_netdev(dev);
+#endif
 	sllin_devs[i] = NULL;
 }
 
@@ -616,7 +625,12 @@ static const struct net_device_ops sll_netdev_ops = {
 static void sll_setup(struct net_device *dev)
 {
 	dev->netdev_ops		= &sll_netdev_ops;
+#if (LINUX_VERSION_CODE < KERNEL_VERSION(4, 11, 9))
 	dev->destructor		= sll_free_netdev;
+#else
+	dev->needs_free_netdev	= true;
+	dev->priv_destructor	= sll_free_netdev;
+#endif
 
 	dev->hard_header_len	= 0;
 	dev->addr_len		= 0;
@@ -1821,8 +1835,10 @@ static void __exit sllin_exit(void)
 		sl = netdev_priv(dev);
 		if (sl->tty) {
 			netdev_dbg(sl->dev, "tty discipline still running\n");
+#if (LINUX_VERSION_CODE < KERNEL_VERSION(4, 11, 9))
 			/* Intentionally leak the control block. */
 			dev->destructor = NULL;
+#endif
 		}
 
 		unregister_netdev(dev);
